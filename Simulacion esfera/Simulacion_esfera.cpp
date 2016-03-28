@@ -687,58 +687,42 @@ int main(int argc, char* argv[])
     // Set the simulation parameters.
     
     SimulationParameters param;
-    
     readUserDefinedSimulationParameters(xmlInputFileName, param);
     calculateDerivedSimulationParameters(param);
-    
     global::IOpolicy().activateParallelIO(param.useParallelIO);
-
-
-    
     std::cout.precision(10);
     std::scientific(std::cout);
-    
-
     
     // Immersed surfaces.
     
     pcout << "Processing immersed surface geometries." << std::endl;
-    
     initializeImmersedSurfaceData(param);
     
     // Fluid.
     
     pcout << "Generating fluid blocks." << std::endl;
-    
     MultiBlockLattice3D<T,DESCRIPTOR> *lattice = 0;
     MultiScalarField3D<T> *rhoBar = 0;
     MultiTensorField3D<T,3> *j = 0;
     MultiContainerBlock3D *container = 0;
     std::vector<MultiBlock3D*> lattice_rho_bar_j_arg;
-    
     createFluidBlocks(param, lattice, rhoBar, j, container, lattice_rho_bar_j_arg);
     
-       // Boundary conditions.
-    
+    // Boundary conditions.
     pcout << "Generating outer domain boundary conditions." << std::endl;
-    
     OnLatticeBoundaryCondition3D<T,DESCRIPTOR> *bc = createLocalBoundaryCondition3D<T,DESCRIPTOR>();
     outerDomainBoundaryConditions(param, lattice, rhoBar, j, bc);
     delete bc;
     
     // Initialization.
-    
     std::vector<MultiBlock3D*> checkpointBlocks;
     checkpointBlocks.push_back(lattice);
     checkpointBlocks.push_back(rhoBar);
     checkpointBlocks.push_back(j);
     
     plint iniIter = 0;
-    
     initializeSimulation(param, continueSimulation, xmlRestartFileName, iniIter, lattice, lattice_rho_bar_j_arg,
                          checkpointBlocks);
-    
-    
     
     
     // Starting iterations.
@@ -780,7 +764,6 @@ int main(int argc, char* argv[])
     for (plint iIter = iniIter; iIter < param.maxIter && !stopExecution; iIter++) {
         param.nextIter = iIter + 1;
         
-
         
         if (iIter != iniIter) {
             
@@ -788,22 +771,24 @@ int main(int argc, char* argv[])
                                    *container, param.largeEnvelopeWidth, lattice->getBoundingBox(), param.incompressibleModel);
             
             
-          for (plint iSurface = 0; iSurface < param.numSurfaces; iSurface++)
-            {
+            for (plint iSurface = 0; iSurface < param.numSurfaces; iSurface++) {
+
                 
-                force = -reduceImmersedForce<T>(*container, iSurface);
+            force = -reduceImmersedForce<T>(*container, iSurface);
                 
                 torque = reduceAxialTorqueImmersed<T>(*container,centro_objeto, centro_objeto, iSurface);
+                
             }
+
             
             
-            pcout << "(vx=" << velocidad[0] << ", vy=" << velocidad[1] << ", vz=" << velocidad[2] << ")" << std::endl;
+          pcout << "(vx=" << velocidad[0] << ", vy=" << velocidad[1] << ", vz=" << velocidad[2] << ")" << std::endl;
             
-            pcout << "(fx=" << force[0] << ", fy=" << force[1] << ", fz=" << force[2] << ")" << std::endl;
+        pcout << "(fx=" << force[0] << ", fy=" << force[1] << ", fz=" << force[2] << ")" << std::endl;
             
-            pcout << "(omega x=" << velocidad_angular[0] << ", omega y=" << velocidad_angular[1] << ", omega z=" << velocidad_angular[2] << ")" << std::endl;
+           pcout << "(omega x=" << velocidad_angular[0] << ", omega y=" << velocidad_angular[1] << ", omega z=" << velocidad_angular[2] << ")" << std::endl;
             
-            pcout << "(Lx=" << torque[0] << ", Ly=" << torque[1] << ", Lz=" << torque[2] << ")" << std::endl;
+        pcout << "(Lx=" << torque[0] << ", Ly=" << torque[1] << ", Lz=" << torque[2] << ")" << std::endl;
 
             
             
@@ -865,14 +850,10 @@ int main(int argc, char* argv[])
         
         if (norma!=0.0)
         {
-            
             vectores_unitarios[0]=velocidad_angular[0]/norma;
             vectores_unitarios[1]=velocidad_angular[1]/norma;
             vectores_unitarios[2]=velocidad_angular[2]/norma;
-            
-            
         }
-        
         
         else
             
@@ -883,18 +864,12 @@ int main(int argc, char* argv[])
             
         }
         
-        
         centro_objeto[0]=centro_objeto[0]+velocidad[0]*param.dt+(force[0]*tiempo_cuadrado)/(2*param.masa);
         centro_objeto[1]=centro_objeto[1]+velocidad[1]*param.dt+(force[1]*tiempo_cuadrado)/(2*param.masa);
         centro_objeto[2]=centro_objeto[2]+velocidad[2]*param.dt+(force[2]*tiempo_cuadrado)/(2*param.masa);
-
-
-        
         
         
         updateMovingSurfaces(param, param.nextIter,force, torque,velocidad, velocidad_angular, centro_objeto, vectores_unitarios,norma);
-        
-        
         
         global::timer("lb-iter").start();
         lattice->executeInternalProcessors(); // Execute all processors and communicate appropriately.
