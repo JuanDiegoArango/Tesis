@@ -10,8 +10,6 @@
 ## compilation.
 ##########################################################################
 
-
-
 # USE: multiple arguments are separated by spaces.
 #   For example: projectFiles = file1.cpp file2.cpp
 #                optimFlags   = -O -finline-functions
@@ -58,8 +56,6 @@ debugFlags   = -g
 profileFlags = -pg
 
 
-
-
 ##########################################################################
 # All code below this line is just about forwarding the options
 # to SConstruct. It is recommended not to modify anything there.
@@ -89,9 +85,7 @@ SConsArgs = palabosRoot=$(palabosRoot) \
 compile:
 	python $(SCons) $(SConsArgs)
 
-
 clean:
 	python $(SCons) -c $(SConsArgs)
 	/bin/rm -vf `find $(palabosRoot) -name '*~'`
-
 

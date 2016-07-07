@@ -1,4 +1,3 @@
-
 <?xml version="1.0" ?>
 
 <!--
@@ -9,9 +8,9 @@
 <geometry>
     <!-- Coordinates of the physical simulation domain. -->
     <simulationDomain>
-        <x> -0.450 2.500 </x>
-        <y> -0.455 0.445 </y>
-        <z> -0.455 0.445 </z>
+        <x> 0.0 0.6 </x>
+        <y> 0.0 0.2 </y>
+        <z> 0.0 0.2 </z>
     </simulationDomain>
     <!-- Files with the moving immersed surface geometries. -->
     <movingSurfaceFileNames> sphere.stl </movingSurfaceFileNames>
@@ -19,8 +18,7 @@
 
 <numerics>
     
-    <masa> 0.1 </masa>
-    <momento_de_inercia> 0.1 </momento_de_inercia>
+    <masa> 1.0e3  </masa>
     <!-- Immersed surfaces are represented as triangle surface meshes.
          Because of the immersed boundary method used, the size of
          the triangles must approximately be the same as the lattice cell size.
@@ -37,13 +35,13 @@
          achieved. -->
     <maxNumSurfaceRefinements> 100 </maxNumSurfaceRefinements>
     <!-- Characteristic length to define the resolution and the Reynolds number. -->
-    <characteristicLength> 0.1 </characteristicLength>
+    <characteristicLength> 0.05 </characteristicLength>
     <!-- Total number of lattice nodes in the characteristic length. -->
-    <resolution> 3 </resolution>
+    <resolution> 25 </resolution>
     <!-- Discrete time step. -->
-    <dt> 0.0025 </dt>
+    <dt> 1.0e-4 </dt>
     <!-- Maximum number of iterations. -->
-    <maxIter> 1000000 </maxIter>
+    <maxIter> 100000 </maxIter>
     <!-- Iterations for the immersed boundary method. -->
     <ibIter> 4 </ibIter>
     <!-- Number of initial iterations for smoothly increasing the inlet velocity. -->
@@ -54,8 +52,6 @@
     <inletVelocity> 1.0 0.0 0.0 </inletVelocity>
     <!-- Use periodic lateral boundaries or free-slip ones? -->
     <lateralPeriodic> true </lateralPeriodic>
-    <outflowBcType> 2 </outflowBcType>
-    <!-- File for signaling program abortion. -->
     <abortFileName> abort </abortFileName>
     <!-- XML file name for restarting. -->
     <xmlContinueFileName> continue.xml </xmlContinueFileName>
@@ -69,7 +65,7 @@
     <!-- Fluid density. -->
     <rho> 1.0 </rho>
     <!-- Fluid kinematic viscosity. -->
-    <nu> 1.0e-3 </nu>
+    <nu> 1e-2 </nu>
     <!-- Absolute pressure at infinity. -->
     <ambientPressure> 0.0 </ambientPressure>
 
@@ -88,11 +84,8 @@
     <outputInDomain> true </outputInDomain>
     <!-- Domain for disk output (must be a subset of the simulation domain). -->
     <outputDomain>
-        <x> -0.450 2.500 </x>
-        <y> -0.455 0.445 </y>
-        <z> -0.455 0.445 </z>
+        <x> 0.0 0.6 </x>
+        <y> 0.0 0.2 </y>
+        <z> 0.0 0.2 </z>
     </outputDomain>
 </output>
-
-
-

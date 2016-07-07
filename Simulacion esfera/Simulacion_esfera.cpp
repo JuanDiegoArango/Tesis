@@ -52,7 +52,8 @@ struct SimulationParameters {
     
     std::string abortFileName;                      // File for signaling program abortion.
     std::string xmlContinueFileName;                // XML file for restarting.
-    std::string baseFileName;                       // Basename of the checkpoint files.
+    std::string baseFileName;
+    // Basename of the checkpoint files.
     
     T rho;                                          // Fluid density in physical units
     T nu;                                           // Fluid kinematic viscosity in physical units.
@@ -60,22 +61,29 @@ struct SimulationParameters {
     T cSmago;                                       // Smagorinsky parameter.
     Array<T,3> inletVelocity;                       // Inlet velocity vector in physical units.
     
+    T radio_bacteria;
     T targetCSmago;
-    bool useParallelIO;                             // For a desktop PC this should be "false", for a cluster "true".
+    bool useParallelIO;
+    bool inicia_movimiento;
+    
+    
     
     Precision precision;                            // Precision for geometric operations.
     
     bool outputInDomain;                            // Save data on disk in a volume domain or not?
     Cuboid<T> outputCuboid;                         // Volume domain for disk output.
-    
-    
-    
 
     
     T lx, ly, lz;                                   // Dimensions of the physical simulation domain.
     plint nx, ny, nz;                               // Grid dimensions of the simulation domain.
     T rho_LB;
     T ambientPressure_LB;
+    
+    Array<T,3> velocidad;
+    Array<T,3> velocidad_angular;
+    Array<T,3> eje_unitario;
+    Array<T,3> vectores_unitarios;
+
     Array<T,3> inletVelocity_LB;
     std::vector<plint> startIds;
     std::vector<Array<T,3> > vertices;
@@ -85,12 +93,11 @@ struct SimulationParameters {
     T omega;                                        // Relaxation parameter for the fluid.
     T dx;                                           // Discrete spatial step.
     Array<T,3> physicalLocation;                    // Location of the physical domain.
-    Array<T,3>vector_al_centro;
     Array<T,3> centro_geometrico;
     // Location of the physical domain.
 
-    Box3D lateral1, lateral2;
-    Box3D lateral3, lateral4;
+    Box3D lateral1, lateral2 ,lateral3, lateral4;
+    Box3D interior;
     plint smallEnvelopeWidth;                       // Standard width.
     plint largeEnvelopeWidth;                       // For velocity because of immersed walls.
     bool saveDynamicContent;
@@ -101,16 +108,6 @@ struct SimulationParameters {
     
 };
 
-T toPhys(T lbVal, plint direction, T dx, Array<T,3> const& location)
-{
-    PLB_ASSERT(direction >= 0 && direction <= 2);
-    return (lbVal * true + location[direction]);
-}
-
-Array<T,3> toPhys(Array<T,3> const& lbVal, T dx, Array<T,3> const& location)
-{
-    return (lbVal * dx + location);
-}
 
 T toLB(T physVal, plint direction, T dx, Array<T,3> const& location)
 {
@@ -146,7 +143,6 @@ void readUserDefinedSimulationParameters(std::string xmlInputFileName, Simulatio
     
     
     document["numerics"]["masa"].read(param.masa);
-    document["numerics"]["momento_de_inercia"].read(param.momento_de_inercia);
 
     document["numerics"]["characteristicLength"].read(param.characteristicLength);
     document["numerics"]["resolution"].read(param.resolution);
@@ -173,6 +169,10 @@ void readUserDefinedSimulationParameters(std::string xmlInputFileName, Simulatio
     document["output"]["outIter"].read(param.outIter);
     document["output"]["cpIter"].read(param.cpIter);
     document["output"]["abIter"].read(param.abIter);
+    
+    
+    
+    
     
     document["output"]["outputInDomain"].read(param.outputInDomain);
     if (param.outputInDomain) {
@@ -247,18 +247,26 @@ void computeOutputDomain(SimulationParameters& param)
 void defineOuterDomain(SimulationParameters& param)
 {
     
-    param.lateral1= Box3D(1,      param.nx-2,   0,      0,      1,      param.nz-2);
-    param.lateral2= Box3D(1,      param.nx-2,   param.ny-1,   param.ny-1,   1,      param.nz-2);
+    param.lateral1=  Box3D(0,      param.nx-1,       0     ,       0     ,         1,      param.nz-2);
+    param.lateral2=  Box3D(0,      param.nx-1,   param.ny-1,   param.ny-1,         1,      param.nz-2);
     
-    param.lateral3 = Box3D(0,      param.nx-1,   0,      param.ny-1,   0,      0);
-    param.lateral4 = Box3D(0,      param.nx-1,   0,      param.ny-1,   param.nz-1,   param.nz-1);
+    param.lateral3 = Box3D(0,      param.nx-1,       0     ,      param.ny-1,       0,             0    );
+    param.lateral4 = Box3D(0,      param.nx-1,       0     ,      param.ny-1,   param.nz-1,   param.nz-1);
+    
+    param.interior= Box3D( 0,      param.nx-1,        1    ,      param.ny-2,      2  ,      param.nz-3);
     
     
 }
 
 void calculateDerivedSimulationParameters(SimulationParameters& param)
 {
-    // Derived quantities.
+    
+    
+ 
+    param.inicia_movimiento=false;
+    param.eje_unitario=Array<T,3>(0.,1.,0.);
+    
+
     
     param.smallEnvelopeWidth = 1;
     param.largeEnvelopeWidth = 4;
@@ -281,6 +289,13 @@ void calculateDerivedSimulationParameters(SimulationParameters& param)
     param.ambientPressure_LB = (1.0/param.rho) * (param.dt*param.dt/(param.dx*param.dx)) * param.ambientPressure;
     param.inletVelocity_LB = param.inletVelocity * (param.dt / param.dx);
     
+
+    param.vectores_unitarios=Array<T,3>(0.,0.,0.);
+    param.velocidad=param.dt/param.dx*Array<T,3>(0.5,0.,0.);
+    param.velocidad_angular=param.dt*Array<T,3>(0.,-2.5,0.);
+  
+    
+    
     if (param.refineSurfaceMeshes) {
         if (param.targetMaxEdgeLength < 0.0) {
             param.targetMaxEdgeLength = param.dx;
@@ -289,15 +304,25 @@ void calculateDerivedSimulationParameters(SimulationParameters& param)
     
 
     T nu_LB = param.nu * param.dt / (param.dx * param.dx);
+    //este parametro es el basicamente controla
     param.omega = 1.0 / (DESCRIPTOR<T>::invCs2 * nu_LB + 0.5);
+    
     
     computeOutputDomain(param);
     defineOuterDomain(param);
     
-    pcout << "numero de reynolds = " << param.inletVelocity[0]*param.characteristicLength/param.nu << std::endl;
+    
+    T NORMA_VELOCIDAD=sqrt(param.inletVelocity[0]*param.inletVelocity[0] +param.inletVelocity[1]*param.inletVelocity[1]+ param.inletVelocity[2]*param.inletVelocity[2]);
+    
+    
+    pcout << "velocidad del sonido = " << nu_LB*(1.0/param.omega-0.5) << std::endl;
+    pcout << "nu_LB = " << nu_LB<< std::endl;
+    pcout << "numero de reynolds = " << NORMA_VELOCIDAD*param.characteristicLength/param.nu << std::endl;
     pcout << "dx = " << param.dx << std::endl;
     pcout << "dt = " << param.dt << std::endl;
     pcout << "tiempo de relajacion = " << 1/param.omega<< std::endl;
+    pcout << "velocidad de salida en unidades de lattice = " << param.inletVelocity_LB[0]<< std::endl;
+
 
 
 }
@@ -338,14 +363,28 @@ void initializeImmersedSurfaceData(SimulationParameters& param)
 
         
         T maxEdgeLength = surfaceTriangleSet->getMaxEdgeLength();
-        surfaceTriangleSet->scale(1.0 / param.dx);
-        surfaceTriangleSet->translate(-param.physicalLocation / param.dx);
-        
-        Cuboid<T> el_cubo= surfaceTriangleSet->getBoundingCuboid();
+        surfaceTriangleSet->scale(12.5/(100.0*param.dx));
+        //380nm ->0.01
+        Array <T,3> posicion_inicial=Array<T,3>(param.nx-1,param.ny-1,param.nz-1)*0.5;
+        Cuboid<T> el_cubo = surfaceTriangleSet->getBoundingCuboid();
         Array<T,3> obstacleCenter = 0.5 * (el_cubo.lowerLeftCorner + el_cubo.upperRightCorner);
-        param.centro_geometrico=obstacleCenter;
+        param.centro_geometrico=posicion_inicial;
+        surfaceTriangleSet->translate(posicion_inicial-obstacleCenter);
         
         
+        
+        param.radio_bacteria= 0.5 *std::abs(el_cubo.lowerLeftCorner[0] - el_cubo.upperRightCorner[0]);
+        param.momento_de_inercia=param.masa*(2.0/5.0)*(param.radio_bacteria)*(param.radio_bacteria);
+        
+
+        pcout << "radio bacteria: " << param.radio_bacteria*param.dx<< std::endl;
+        pcout << "momento de inercia: " << param.momento_de_inercia << std::endl;
+
+        pcout << "locacion obstaculo  " << posicion_inicial[0]*param.dx  << "  "<< posicion_inicial[1]*param.dx  << " "<< posicion_inicial[2]*param.dx << std::endl;
+        
+        pcout << "centro geometrico:  " << obstacleCenter[0]*param.dx  << "  "<< obstacleCenter[1]*param.dx  << " "<< obstacleCenter[2]*param.dx << std::endl;
+
+
         
         ConnectedTriangleSet<T> connectedTriangleSet(*surfaceTriangleSet);
         delete surfaceTriangleSet;
@@ -387,6 +426,10 @@ void initializeImmersedSurfaceData(SimulationParameters& param)
     }
 }
 
+
+
+
+
 class VelocityFunction {
 public:
     VelocityFunction(SimulationParameters& param_)
@@ -394,19 +437,13 @@ public:
     { }
     
     Array<T,3> operator()(pluint id)
-    {   plint iSurface = -1;
-        for (plint iMovingSurface = 0; iMovingSurface < param.numMovingSurfaces; iMovingSurface++) {
-            plint startId = param.startIds[iMovingSurface];
-            plint numVertices = param.allSurfaces[iMovingSurface].getNumVertices();
-            if ((plint) id >= startId && (plint) id < startId + numVertices) {
-                iSurface = iMovingSurface;
-                break;
-            }
-        }
-        
-        
-        
-        return  Array<T,3>(0.0,0.0,0.0);
+    {
+        Array<T,3> const& position = param.vertices[id];
+        Array<T,3> rotacion=getRotationalVelocity(position, param.velocidad_angular,param.vectores_unitarios, param.centro_geometrico);
+        Array<T,3> translacion=param.velocidad;
+        Array<T,3> velocidad_global=rotacion+translacion;
+        return velocidad_global;
+
     }
     
 private:
@@ -447,43 +484,6 @@ private:
     SimulationParameters& param;
 };
 
-void updateMovingSurfaces(SimulationParameters &param, plint iIter,Array<T,3> force, Array<T,3> torque,  Array<T,3> velocidad ,Array<T,3> velocidad_angular, Array<T,3> centro_objeto, Array<T,3> vectores_unitarios, double norma)
-
-{   double tiempo_cuadrado=param.dt*param.dt;
-    for (plint iMovingSurface = 0; iMovingSurface < param.numMovingSurfaces; iMovingSurface++)
-    
-    {
-        
-        plint numVertices = param.allSurfaces[iMovingSurface].getNumVertices();
-        plint startId = param.startIds[iMovingSurface];
-        
-        for (plint iVertex = 0; iVertex < numVertices; iVertex++)
-        {
-            plint id = iVertex + startId;
-            Array<T,3>& position = param.vertices[id];
-            
-                position[0] = position[0]+velocidad[0]*param.dt+(force[0]*tiempo_cuadrado)/(2*param.masa);
-                position[1] = position[1]+velocidad[1]*param.dt+(force[1]*tiempo_cuadrado)/(2*param.masa);
-                position[2] = position[2]+velocidad[2]*param.dt+(force[2]*tiempo_cuadrado)/(2*param.masa);
-            
-                if (norma!=0)
-                {
-                    position = getRotatedPosition(position, velocidad_angular*param.dt,vectores_unitarios,centro_objeto);
-                    
-        
-
-
-                
-                }
-        }
-    
-    
-    }
-    
-    
-    
-}
-
 
 void saveMovingSurfaces(SimulationParameters& param, std::string baseName, plint iIter)
 {
@@ -513,7 +513,7 @@ void readMovingSurfaces(SimulationParameters& param, std::string baseName, plint
         + ".stl";
         
         TriangleSet<T> *surfaceTriangleSet = new TriangleSet<T>(fname, param.precision);
-        surfaceTriangleSet->scale(1.0 / param.dx);
+        surfaceTriangleSet->scale(12.5/(100.0*param.dx));
         surfaceTriangleSet->translate(-param.physicalLocation / param.dx);
         
         ConnectedTriangleSet<T> connectedTriangleSet(*surfaceTriangleSet);
@@ -558,8 +558,11 @@ void createFluidBlocks(SimulationParameters& param, MultiBlockLattice3D<T,DESCRI
                                   new ExternalRhoJcollideAndStream3D<T,DESCRIPTOR>(),
                                   lattice->getBoundingBox(), lattice_rho_bar_j_arg, 0);
     integrateProcessingFunctional(
-                                  new BoxRhoBarJfunctional3D<T,DESCRIPTOR>(),
-                                  lattice->getBoundingBox(), lattice_rho_bar_j_arg, 3); // Boundary conditions are executed at levels 1 and 2.
+                                  new BoxRhoBarJfunctional3D<T,DESCRIPTOR>(),lattice->getBoundingBox(), lattice_rho_bar_j_arg, 3); // Boundary conditions are executed at levels 1 and 2.
+    
+    
+    
+    
     
     // Integrate the immersed boundary processors in the lattice multi-block.
     
@@ -654,9 +657,7 @@ void writeVTK(SimulationParameters const& param, MultiBlockLattice3D<T,DESCRIPTO
         std::auto_ptr<MultiTensorField3D<T,3> > v = computeVelocity(*lattice, param.outputDomain);
         vtkOut.writeData<float>(*computeNorm(*v), "velocityNorm", param.dx / param.dt);
         vtkOut.writeData<3,float>(*v, "velocity", param.dx / param.dt);
-        std::auto_ptr<MultiTensorField3D<T,3> > vort = computeVorticity(*v);
-        vtkOut.writeData<float>(*computeNorm(*vort), "vorticityNorm", 1.0 / param.dt);
-        vtkOut.writeData<3,float>(*vort, "vorticity", 1.0 / param.dt);
+        
     }
     
     
@@ -666,6 +667,8 @@ void writeVTK(SimulationParameters const& param, MultiBlockLattice3D<T,DESCRIPTO
 int main(int argc, char* argv[])
 {
     plbInit(&argc, &argv);
+
+
     
     // Command-line arguments
     
@@ -687,122 +690,88 @@ int main(int argc, char* argv[])
     // Set the simulation parameters.
     
     SimulationParameters param;
+    
     readUserDefinedSimulationParameters(xmlInputFileName, param);
     calculateDerivedSimulationParameters(param);
+    
     global::IOpolicy().activateParallelIO(param.useParallelIO);
+
+
+    
     std::cout.precision(10);
     std::scientific(std::cout);
     
     // Immersed surfaces.
     
     pcout << "Processing immersed surface geometries." << std::endl;
+    
     initializeImmersedSurfaceData(param);
     
     // Fluid.
     
     pcout << "Generating fluid blocks." << std::endl;
+    
     MultiBlockLattice3D<T,DESCRIPTOR> *lattice = 0;
     MultiScalarField3D<T> *rhoBar = 0;
     MultiTensorField3D<T,3> *j = 0;
     MultiContainerBlock3D *container = 0;
     std::vector<MultiBlock3D*> lattice_rho_bar_j_arg;
+    
     createFluidBlocks(param, lattice, rhoBar, j, container, lattice_rho_bar_j_arg);
     
-    // Boundary conditions.
+       // Boundary conditions.
+    
     pcout << "Generating outer domain boundary conditions." << std::endl;
+    
     OnLatticeBoundaryCondition3D<T,DESCRIPTOR> *bc = createLocalBoundaryCondition3D<T,DESCRIPTOR>();
     outerDomainBoundaryConditions(param, lattice, rhoBar, j, bc);
     delete bc;
     
     // Initialization.
+    
     std::vector<MultiBlock3D*> checkpointBlocks;
     checkpointBlocks.push_back(lattice);
     checkpointBlocks.push_back(rhoBar);
     checkpointBlocks.push_back(j);
     
     plint iniIter = 0;
+    
     initializeSimulation(param, continueSimulation, xmlRestartFileName, iniIter, lattice, lattice_rho_bar_j_arg,
                          checkpointBlocks);
+    
+    
     
     
     // Starting iterations.
     pcout << "Starting simulation." << std::endl;
     bool stopExecution = false;
-    setBoundaryVelocity(*lattice, param.lateral4, param.inletVelocity_LB);
-    setBoundaryVelocity(*lattice, param.lateral3, Array<T,3>(0.,0.,0.));
+    
+    
+    initializeAtEquilibrium(*lattice, param.interior,param.rho_LB, Array<T,3>(0.,0.,0.));
+    setBoundaryVelocity(*lattice, param.lateral4, Array<T,3>(0.,0.,0.));
+    setBoundaryVelocity(*lattice, param.lateral3, param.inletVelocity_LB);
+    
+    
     param.nextIter = iniIter + 1;
     
+    
     //la fuerza
-    Array<T,3> force;
-    
+    Array<T,3> force=Array<T,3>(0.,0.,0.);
     //el torque
-    Array<T,3> torque;
+    Array<T,3> torque=Array<T,3>(0.,0.,0.);
+    //conversion de fuerza.
+    T unidades_fuerza = 2.0 * param.rho * (param.dx * param.dx * param.dx * param.dx) / (param.dt * param.dt);
+
     
-    //todos los vectoes
-    Array<T,3> velocidad;
-    Array<T,3> centro_objeto;
-    Array<T,3> velocidad_angular;
+    
     Array<T,3> vectores_unitarios;
-    
-    //velocidades lineales
-    velocidad[0]=0.0;
-    velocidad[1]=0.0;
-    velocidad[2]=0.0;
-    
-    //velocidades angulares
-    velocidad_angular[0]=0.0;
-    velocidad_angular[1]=0.0;
-    velocidad_angular[2]=0.0;
-    
-    //eje de rotacion, se toma el centro de masa de la esfera "bacteria"
-    centro_objeto[0]=param.centro_geometrico[0];
-    centro_objeto[1]=param.centro_geometrico[1];
-    centro_objeto[2]=param.centro_geometrico[2];
-    
-    
-    
     for (plint iIter = iniIter; iIter < param.maxIter && !stopExecution; iIter++) {
         param.nextIter = iIter + 1;
         
-        
-        if (iIter != iniIter) {
-            
-            recomputeImmersedForce(SurfaceNormalFunction(param), param.omega, param.rho_LB, *lattice,
-                                   *container, param.largeEnvelopeWidth, lattice->getBoundingBox(), param.incompressibleModel);
-            
-            
-            for (plint iSurface = 0; iSurface < param.numSurfaces; iSurface++) {
-
-                
-            force = -reduceImmersedForce<T>(*container, iSurface);
-                
-                torque = reduceAxialTorqueImmersed<T>(*container,centro_objeto, centro_objeto, iSurface);
-                
-            }
-
-            
-            
-          pcout << "(vx=" << velocidad[0] << ", vy=" << velocidad[1] << ", vz=" << velocidad[2] << ")" << std::endl;
-            
-        pcout << "(fx=" << force[0] << ", fy=" << force[1] << ", fz=" << force[2] << ")" << std::endl;
-            
-           pcout << "(omega x=" << velocidad_angular[0] << ", omega y=" << velocidad_angular[1] << ", omega z=" << velocidad_angular[2] << ")" << std::endl;
-            
-        pcout << "(Lx=" << torque[0] << ", Ly=" << torque[1] << ", Lz=" << torque[2] << ")" << std::endl;
-
-            
-            
-            pcout << "Time for one fluid iteration: " << global::timer("lb-iter").getTime() / (T) param.statIter << std::endl;
-            global::timer("lb-iter").reset();
-            pcout << std::endl;
-        }
-        
         if (iIter % param.outIter == 0 || iIter == param.maxIter - 1) {
-            pcout << "Output to disk at iteration: " << iIter << std::endl;
             writeVTK(param, lattice, iIter);
             saveMovingSurfaces(param, outDir, iIter);
-            pcout << std::endl;
-        }
+            pcout << std::endl;}
         
         if ((param.cpIter > 0 && iIter % param.cpIter == 0 && iIter != iniIter) ||
             iIter == param.maxIter - 1) {
@@ -825,57 +794,73 @@ int main(int argc, char* argv[])
                 pcout << std::endl;
             }
         }
-        
-        // Here we could use either "param.nextIter" or "iIter".
-        
-        double tiempo_cuadrado=param.dt*param.dt;
 
-        
-        //vector velocidad lineal.
 
-        velocidad[0]=(param.dt*force[0]/param.masa)+velocidad[0];
-        velocidad[1]=(param.dt*force[1]/param.masa)+velocidad[1];
-        velocidad[2]=(param.dt*force[2]/param.masa)+velocidad[2];
-        
-        //vector velocidad angular.
 
-        velocidad_angular[0]=(param.dt*torque[0]/param.momento_de_inercia)+velocidad_angular[0];
-        velocidad_angular[1]=(param.dt*torque[1]/param.momento_de_inercia)+velocidad_angular[1];
-        velocidad_angular[2]=(param.dt*torque[2]/param.momento_de_inercia)+velocidad_angular[2];
-        
-        
-        
-        T norma = sqrt(velocidad_angular[0]*velocidad_angular[0]+velocidad_angular[1]*velocidad_angular[1] +velocidad_angular[2]*velocidad_angular[2]);
 
+
+        //aceleración en nuevo intervalo
+        if (iIter>2000)
+        {
+            
+            recomputeImmersedForce(SurfaceNormalFunction(param), param.omega, param.rho_LB, *lattice,*container, param.largeEnvelopeWidth, lattice->getBoundingBox(), param.incompressibleModel);
+            force = -reduceImmersedForce<T>(*container, 0);
+            torque = -reduceAxialTorqueImmersed<T>(*container,param.centro_geometrico, param.eje_unitario, 0);
+            
+        }
         
+        
+        
+        //vector velocidad lineal después.
+        param.velocidad=(force*1.0/param.masa)+param.velocidad;
+        
+        //vector velocidad angular después.
+        param.velocidad_angular=(torque*1.0/param.momento_de_inercia)+param.velocidad_angular;
+        
+        T norma = sqrt(param.velocidad_angular[0]*param.velocidad_angular[0]+param.velocidad_angular[1]*param.velocidad_angular[1] +param.velocidad_angular[2]*param.velocidad_angular[2]);
         if (norma!=0.0)
         {
-            vectores_unitarios[0]=velocidad_angular[0]/norma;
-            vectores_unitarios[1]=velocidad_angular[1]/norma;
-            vectores_unitarios[2]=velocidad_angular[2]/norma;
-        }
+            param.vectores_unitarios=param.velocidad_angular/norma;}
+            //mover el sistema en el instante
+            param.centro_geometrico=param.centro_geometrico+param.velocidad;
         
-        else
-            
+        
+        for (plint iMovingSurface = 0; iMovingSurface < param.numMovingSurfaces; iMovingSurface++)
         {
-            vectores_unitarios[0]=0;
-            vectores_unitarios[1]=0;
-            vectores_unitarios[2]=0;
             
+            plint numVertices = param.allSurfaces[iMovingSurface].getNumVertices();
+            plint startId = param.startIds[iMovingSurface];
+            
+            for (plint iVertex = 0; iVertex < numVertices; iVertex++)
+            {
+                plint id = iVertex + startId;
+                Array<T,3>& position = param.vertices[id];
+                position = position+param.velocidad;
+                if (norma!=0)
+                {position = getRotatedPosition(position, param.velocidad_angular,param.vectores_unitarios, param.centro_geometrico);}
+            }
+
         }
         
-        centro_objeto[0]=centro_objeto[0]+velocidad[0]*param.dt+(force[0]*tiempo_cuadrado)/(2*param.masa);
-        centro_objeto[1]=centro_objeto[1]+velocidad[1]*param.dt+(force[1]*tiempo_cuadrado)/(2*param.masa);
-        centro_objeto[2]=centro_objeto[2]+velocidad[2]*param.dt+(force[2]*tiempo_cuadrado)/(2*param.masa);
         
         
-        updateMovingSurfaces(param, param.nextIter,force, torque,velocidad, velocidad_angular, centro_objeto, vectores_unitarios,norma);
         
+        pcout << (param.dx/param.dt)*param.velocidad[0] << "," << (param.dx/param.dt)*param.velocidad[1] << "," << (param.dx/param.dt)*param.velocidad[2]<<","<<param.velocidad_angular[0]*(1/param.dt) << "," <<  param.velocidad_angular[1]*(1/param.dt)  << "," << param.velocidad_angular[2]*(1/param.dt) <<","<<force[0]<<","<<force[1]<<","<<force[2]<<","<<torque[0]<<","<<torque[1]<<","<<torque[2]<<  std::endl;
+        
+
+
+        
+
+        
+
         global::timer("lb-iter").start();
         lattice->executeInternalProcessors(); // Execute all processors and communicate appropriately.
         global::timer("lb-iter").stop();
         lattice->incrementTime();
+        
+        
     }
+    
     
     
     delete container;
@@ -884,4 +869,6 @@ int main(int argc, char* argv[])
     delete lattice;
     
     exit(0);
+    
+    
 }
